@@ -71,7 +71,7 @@ impl<Inbound: DeserializeOwned, Outbound: Serialize> TypedWebSocket<Inbound, Out
     }
 }
 
-async fn handle_socket(socket: WebSocket, database: Arc<Database>, debug: bool) {
+async fn handle_socket(socket: WebSocket, database: Arc<Database>, debug: bool, replica: bool) {
     let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
     let mut socket: TypedWebSocket<MessageToDatabase, MessageFromDatabase> =
         TypedWebSocket::new(socket);
@@ -89,6 +89,8 @@ async fn handle_socket(socket: WebSocket, database: Arc<Database>, debug: bool) 
 
     let conn = if debug {
         database.connect_debug(callback)
+    } else if replica {
+        database.connect_replica(callback)
     } else {
         database.connect(callback)
     };
@@ -138,6 +140,9 @@ async fn handle_socket(socket: WebSocket, database: Arc<Database>, debug: bool) 
 struct ConnectionQuery {
     #[serde(default)]
     debug: bool,
+
+    #[serde(default)]
+    replica: bool,
 }
 
 type RoomMap = DashMap<String, Arc<Database>>;
@@ -167,7 +172,7 @@ async fn connection(
         .expect("Room should have been created before connection.")
         .clone();
 
-    ws.on_upgrade(move |socket| handle_socket(socket, database, query.debug))
+    ws.on_upgrade(move |socket| handle_socket(socket, database, query.debug, query.replica))
 }
 
 async fn new_room(Host(hostname): Host, State(room_map): State<Arc<RoomMap>>) -> Json<RoomResult> {

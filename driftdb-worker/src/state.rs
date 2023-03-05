@@ -1,6 +1,6 @@
 use driftdb::{
     types::{key_seq_pair::KeyAndSeq, SequenceNumber, SequenceValue},
-    ApplyResult, Database, DeleteInstruction, Key, PushInstruction, Store, ValueLog,
+    StoreInstruction, Database, DeleteInstruction, Key, PushInstruction, Store, ValueLog,
 };
 use gloo_utils::format::JsValueSerdeExt;
 use serde_json::Value;
@@ -75,7 +75,7 @@ impl PersistedDb {
 
         {
             let state = self.state.clone();
-            db.set_replica_callback(move |apply_result: &ApplyResult| {
+            db.set_replica_callback(move |apply_result: &StoreInstruction| {
                 let mut storage = state.state.storage();
                 let apply_result = apply_result.clone();
 

@@ -1,19 +1,20 @@
 use crate::types::{Action, Key, SequenceNumber, SequenceValue};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct ValueLog {
     pub values: VecDeque<SequenceValue>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Store {
     subjects: HashMap<Key, ValueLog>,
     sequence_number: SequenceNumber,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum DeleteInstruction {
     /// Delete all values for the given subject.
     Delete,
@@ -22,7 +23,7 @@ pub enum DeleteInstruction {
     DeleteUpTo(SequenceNumber),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum PushInstruction {
     /// Push the given value to the end of the subject.
     Push(SequenceValue),
@@ -31,8 +32,8 @@ pub enum PushInstruction {
     PushStart(SequenceValue),
 }
 
-#[derive(Clone)]
-pub struct ApplyResult {
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct StoreInstruction {
     pub key: Key,
 
     /// Optional instruction to remove some or all existing values.
@@ -43,12 +44,9 @@ pub struct ApplyResult {
 
     /// Optional value to broadcast to clients.
     pub broadcast: Option<SequenceValue>,
-
-    /// The number of retained records for the given subject after applying the action.
-    pub stream_size: usize,
 }
 
-impl ApplyResult {
+impl StoreInstruction {
     pub fn mutates(&self) -> bool {
         self.delete_instruction.is_some() || self.push_instruction.is_some()
     }
@@ -65,6 +63,10 @@ impl Store {
     fn next_seq(&mut self) -> SequenceNumber {
         self.sequence_number.0 += 1;
         self.sequence_number
+    }
+
+    pub fn subjects(&self) -> &HashMap<Key, ValueLog> {
+        &self.subjects
     }
 
     pub fn dump(&self) -> HashMap<Key, Vec<SequenceValue>> {
@@ -87,33 +89,31 @@ impl Store {
             .collect()
     }
 
-    pub fn apply(&mut self, key: &Key, value: Value, action: &Action) -> ApplyResult {
-        let mut result = match action {
+    pub fn convert_to_instruction(&mut self, key: &Key, value: Value, action: &Action) -> StoreInstruction {
+        match action {
             Action::Append => {
                 let seq = self.next_seq();
                 let value = SequenceValue { value, seq };
 
-                ApplyResult {
+                StoreInstruction {
                     key: key.clone(),
                     delete_instruction: None,
                     push_instruction: Some(PushInstruction::Push(value.clone())),
                     broadcast: Some(value),
-                    stream_size: 0,
                 }
             }
             Action::Replace => {
                 let seq = self.next_seq();
                 let value = SequenceValue { value, seq };
 
-                ApplyResult {
+                StoreInstruction {
                     key: key.clone(),
                     delete_instruction: Some(DeleteInstruction::Delete),
                     push_instruction: Some(PushInstruction::Push(value.clone())),
                     broadcast: Some(value),
-                    stream_size: 0,
                 }
             }
-            Action::Compact { seq } => ApplyResult {
+            Action::Compact { seq } => StoreInstruction {
                 key: key.clone(),
                 delete_instruction: Some(DeleteInstruction::DeleteUpTo(*seq)),
                 push_instruction: Some(PushInstruction::PushStart(SequenceValue {
@@ -121,46 +121,44 @@ impl Store {
                     seq: *seq,
                 })),
                 broadcast: None,
-                stream_size: 0,
             },
             Action::Relay => {
                 let seq = self.next_seq();
-                ApplyResult {
+                StoreInstruction {
                     key: key.clone(),
                     delete_instruction: None,
                     push_instruction: None,
                     broadcast: Some(SequenceValue { value, seq }),
-                    stream_size: 0,
                 }
             }
-        };
+        }
+    }
 
-        match &result.delete_instruction {
+    pub fn apply(&mut self, store_instruction: &StoreInstruction) -> usize {
+        match &store_instruction.delete_instruction {
             Some(DeleteInstruction::Delete) => {
-                let value_log = self.subjects.entry(key.clone()).or_default();
+                let value_log = self.subjects.entry(store_instruction.key.clone()).or_default();
                 value_log.values.clear();
             }
             Some(DeleteInstruction::DeleteUpTo(seq)) => {
-                let value_log = self.subjects.entry(key.clone()).or_default();
+                let value_log = self.subjects.entry(store_instruction.key.clone()).or_default();
                 value_log.values.retain(|v| v.seq > *seq);
             }
             None => {}
         }
 
-        match &result.push_instruction {
+        match &store_instruction.push_instruction {
             Some(PushInstruction::Push(value)) => {
-                let value_log = self.subjects.entry(key.clone()).or_default();
+                let value_log = self.subjects.entry(store_instruction.key.clone()).or_default();
                 value_log.values.push_back(value.clone());
             }
             Some(PushInstruction::PushStart(value)) => {
-                let value_log = self.subjects.entry(key.clone()).or_default();
+                let value_log = self.subjects.entry(store_instruction.key.clone()).or_default();
                 value_log.values.push_front(value.clone());
             }
             None => {}
         }
 
-        result.stream_size = self.subjects.get(key).map(|v| v.values.len()).unwrap_or(0);
-
-        result
+        self.subjects.get(&store_instruction.key).map(|v| v.values.len()).unwrap_or(0)
     }
 }

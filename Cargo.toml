@@ -3,4 +3,5 @@ members = [
     "driftdb",
     "driftdb-server",
     "driftdb-worker",
+    "driftdb-ui",
 ]

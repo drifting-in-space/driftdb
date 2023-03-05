@@ -18,7 +18,7 @@
     "@types/react-color": "^3.0.6",
     "@types/react-dom": "18.0.10",
     "@types/three": "^0.149.0",
-    "driftdb-react": "1.0.10",
+    "driftdb-react": "*",
     "eslint": "8.31.0",
     "eslint-config-next": "13.1.2",
     "next": "13.1.2",

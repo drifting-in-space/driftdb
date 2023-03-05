@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Display;
+use crate::{StoreInstruction, Store};
 
 pub mod key_seq_pair;
 
@@ -96,6 +97,12 @@ pub struct SequenceValue {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize, Serialize)]
+pub enum ReplicaInstruction {
+    StoreInstruction(StoreInstruction),
+    InitInstruction(Store),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessageFromDatabase {
     Push {
@@ -117,4 +124,5 @@ pub enum MessageFromDatabase {
     Pong {
         nonce: Option<u64>,
     },
+    ReplicaInstruction(ReplicaInstruction),
 }
