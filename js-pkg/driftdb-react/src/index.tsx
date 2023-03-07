@@ -249,3 +249,22 @@ export function DriftDBProvider(props: DriftDBProviderProps) {
 
     return <DatabaseContext.Provider value={dbRef.current}>{props.children}</DatabaseContext.Provider>;
 }
+
+export function useSubscription<T>(key: string, callback: (data: any) => void): (v: T) => void {
+    const db = useDatabase()
+    const subscription = useRef(false)
+
+    if (subscription.current === false) {
+        subscription.current = true
+        db.subscribe(key, callback)
+    }
+
+    return (v: T) => {
+        db.send({
+            type: 'push',
+            key,
+            value: v,
+            action: {type: 'relay'}
+        })
+    }
+}
